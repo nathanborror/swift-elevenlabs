@@ -28,7 +28,7 @@ public struct ModelResponse: Codable {
     }
     
     public enum CodingKeys: String, CodingKey {
-        case modelID
+        case modelID = "model_id"
         case name
         case canBeFinetuned = "can_be_finetuned"
         case canDoTextToSpeech = "can_do_text_to_speech"
