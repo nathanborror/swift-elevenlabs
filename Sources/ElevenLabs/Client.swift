@@ -7,7 +7,7 @@ public final class ElevenLabsClient {
         public let host: URL
         public let token: String
         
-        init(host: URL = URL(string: "https://api.elevenlabs.io/v1")!, token: String) {
+        public init(host: URL = URL(string: "https://api.elevenlabs.io/v1")!, token: String) {
             self.host = host
             self.token = token
         }
