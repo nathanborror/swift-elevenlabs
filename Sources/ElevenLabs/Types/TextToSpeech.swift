@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SpeechRequest: Codable {
+public struct TextToSpeechQuery: Codable {
     public var modelID: String
     public var text: String
     public var pronunciationDictionaryLocators: PronunciationDictionaryLocators?

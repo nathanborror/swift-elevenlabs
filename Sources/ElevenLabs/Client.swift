@@ -23,9 +23,7 @@ public final class ElevenLabsClient {
         self.init(configuration: .init(token: token))
     }
     
-    // Speech
-    
-    public func speech(_ payload: SpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
+    public func textToSpeech(_ payload: TextToSpeechQuery, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
         var req = makeRequest(path: "text-to-speech/\(voice)", method: "POST")
         req.httpBody = try JSONEncoder().encode(payload)
         

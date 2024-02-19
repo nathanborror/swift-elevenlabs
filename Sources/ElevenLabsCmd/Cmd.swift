@@ -33,9 +33,15 @@ struct SpeechCompletion: AsyncParsableCommand {
     
     func run() async throws {
         let client = ElevenLabsClient(token: options.token)
-        let query = SpeechRequest(text: "Hello, world!")
-        let data = try await client.speech(query, voice: "21m00Tcm4TlvDq8ikWAM")
+        let query = TextToSpeechQuery(text: options.prompt)
+        let data = try await client.textToSpeech(query, voice: "21m00Tcm4TlvDq8ikWAM")
+        let filename = "\(String.id).mp3"
         
-        try FileHandle.standardOutput.write(contentsOf: data)
+        if let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.appending(component: filename) {
+            try data.write(to: url)
+            try FileHandle.standardOutput.write(contentsOf: url.absoluteString.data(using: .utf8)!)
+        } else {
+            print("unable to create URL")
+        }
     }
 }
