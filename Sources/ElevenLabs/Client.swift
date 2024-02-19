@@ -40,6 +40,15 @@ public final class ElevenLabsClient {
         return data
     }
     
+    public func models() async throws -> [ModelResponse] {
+        let req = makeRequest(path: "models", method: "GET")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        if let httpResponse = resp as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            throw URLError(.badServerResponse)
+        }
+        return try decoder.decode([ModelResponse].self, from: data)
+    }
+    
     // Private
     
     private func makeRequest(path: String, method: String) -> URLRequest {
@@ -48,5 +57,10 @@ public final class ElevenLabsClient {
         req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.setValue(configuration.token, forHTTPHeaderField: "xi-api-key")
         return req
+    }
+    
+    private var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        return decoder
     }
 }
