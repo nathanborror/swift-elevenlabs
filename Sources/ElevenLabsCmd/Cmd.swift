@@ -32,7 +32,7 @@ struct SpeechCompletion: AsyncParsableCommand {
     @OptionGroup var options: Options
     
     func run() async throws {
-        let client = ElevenLabsClient(token: options.token)
+        let client = ElevenLabsClient(configuration: .init(token: options.token))
         let query = TextToSpeechQuery(text: options.prompt)
         let data = try await client.textToSpeech(query, voice: "21m00Tcm4TlvDq8ikWAM")
         let filename = "\(String.id).mp3"

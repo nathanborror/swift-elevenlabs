@@ -7,8 +7,8 @@ public final class ElevenLabsClient {
         public let host: URL
         public let token: String
         
-        public init(host: URL = URL(string: "https://api.elevenlabs.io/v1")!, token: String) {
-            self.host = host
+        public init(host: URL? = nil, token: String) {
+            self.host = host ?? Defaults.apiHost
             self.token = token
         }
     }
@@ -19,14 +19,9 @@ public final class ElevenLabsClient {
         self.configuration = configuration
     }
     
-    public convenience init(token: String) {
-        self.init(configuration: .init(token: token))
-    }
-    
     public func textToSpeech(_ payload: TextToSpeechQuery, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
         var req = makeRequest(path: "text-to-speech/\(voice)", method: "POST")
         req.httpBody = try JSONEncoder().encode(payload)
-        
         if let outputFormat {
             req.queryParameters["output_format"] = outputFormat
         }
@@ -38,6 +33,21 @@ public final class ElevenLabsClient {
             throw URLError(.badServerResponse)
         }
         return data
+    }
+    
+    public func textToSpeechStream(_ payload: TextToSpeechQuery, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil, onResult: @escaping (Data) -> Void, completion: ((Error?) -> Void)?) async throws {
+        var req = makeRequest(path: "text-to-speech/\(voice)/stream", method: "POST")
+        req.httpBody = try JSONEncoder().encode(payload)
+        if let outputFormat {
+            req.queryParameters["output_format"] = outputFormat
+        }
+        if let optimizeStreamingLatency {
+            req.queryParameters["optimize_streaming_latency"] = String(optimizeStreamingLatency)
+        }
+        for try await data in performSteamingDataRequest(from: req) {
+            onResult(data)
+        }
+        completion?(nil)
     }
     
     public func models() async throws -> [ModelResponse] {
@@ -63,4 +73,34 @@ public final class ElevenLabsClient {
         let decoder = JSONDecoder()
         return decoder
     }
+    
+    func performSteamingDataRequest(from request: URLRequest) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    continuation.finish(throwing: error)
+                    return
+                }
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    continuation.finish(throwing: URLError(.badServerResponse))
+                    return
+                }
+                if let data = data {
+                    continuation.yield(data)
+                }
+                continuation.finish()
+            }
+            task.resume()
+            continuation.onTermination = { @Sendable termination in
+                switch termination {
+                case .cancelled:
+                    task.cancel()
+                default:
+                    break
+                }
+            }
+        }
+    }
+
 }
