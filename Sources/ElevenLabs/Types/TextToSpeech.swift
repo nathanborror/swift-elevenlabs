@@ -17,8 +17,8 @@ public struct TextToSpeechQuery: Codable {
     }
     
     public struct VoiceSettings: Codable {
-        public var similarityBoost: Int
-        public var stability: Int
+        public var similarityBoost: Float
+        public var stability: Float
         public var style: Int
         public var useSpeakerBoost: Bool
         
@@ -29,9 +29,9 @@ public struct TextToSpeechQuery: Codable {
             case useSpeakerBoost = "use_speaker_boost"
         }
         
-        public init(similarityBoost: Int, stability: Int, style: Int = 0, useSpeakerBoost: Bool = true) {
-            self.similarityBoost = similarityBoost
-            self.stability = stability
+        public init(similarityBoost: Float, stability: Float, style: Int = 0, useSpeakerBoost: Bool = true) {
+            self.similarityBoost = min(1.0, max(0.0, similarityBoost))
+            self.stability = min(1.0, max(0.0, stability))
             self.style = style
             self.useSpeakerBoost = useSpeakerBoost
         }
