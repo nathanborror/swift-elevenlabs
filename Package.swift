@@ -28,6 +28,5 @@ let package = Package(
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
             .product(name: "SharedKit", package: "swift-shared-kit"),
         ]),
-        .testTarget(name: "ElevenLabsTests", dependencies: ["ElevenLabs"]),
     ]
 )

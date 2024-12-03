@@ -1,81 +1,150 @@
 import Foundation
 import SharedKit
 
-public final class ElevenLabsClient {
-    
-    public struct Configuration {
-        public let host: URL
-        public let token: String
-        
-        public init(host: URL? = nil, token: String) {
-            self.host = host ?? Defaults.apiHost
-            self.token = token
+public final class Client {
+
+    public static let defaultHost = URL(string: "https://api.elevenlabs.io/v1")!
+
+    public let host: URL
+    public let apiKey: String
+    public let userAgent: String?
+
+    internal(set) public var session: URLSession
+
+    public init(session: URLSession = URLSession(configuration: .default), host: URL = defaultHost, apiKey: String, userAgent: String? = nil) {
+        var host = host
+        if !host.path.hasSuffix("/") {
+            host = host.appendingPathComponent("")
+        }
+        self.host = host
+        self.apiKey = apiKey
+        self.userAgent = userAgent
+        self.session = session
+    }
+
+    public enum Error: Swift.Error, CustomStringConvertible {
+        case requestError(String)
+        case responseError(response: HTTPURLResponse, detail: String)
+        case decodingError(response: HTTPURLResponse, detail: String)
+        case unexpectedError(String)
+
+        public var description: String {
+            switch self {
+            case .requestError(let detail):
+                return "Request error: \(detail)"
+            case .responseError(let response, let detail):
+                return "Response error (Status \(response.statusCode)): \(detail)"
+            case .decodingError(let response, let detail):
+                return "Decoding error (Status \(response.statusCode)): \(detail)"
+            case .unexpectedError(let detail):
+                return "Unexpected error: \(detail)"
+            }
         }
     }
-    
-    public let configuration: Configuration
-    
-    public init(configuration: Configuration) {
-        self.configuration = configuration
+
+    private enum Method: String {
+        case post = "POST"
+        case get = "GET"
     }
-    
-    public func textToSpeech(_ payload: TextToSpeechQuery, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
-        var req = makeRequest(path: "text-to-speech/\(voice)", method: "POST")
-        req.httpBody = try JSONEncoder().encode(payload)
-        if let outputFormat {
-            req.queryParameters["output_format"] = outputFormat
+
+    private struct ErrorResponse: Decodable {
+        let detail: Detail
+
+        struct Detail: Codable, Sendable {
+            let loc: [String]
+            let msg: String
+            let type: String
         }
-        if let optimizeStreamingLatency {
-            req.queryParameters["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        if let httpResponse = resp as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
-        return data
     }
-    
-    public func textToSpeechStream(_ payload: TextToSpeechQuery, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil, onResult: @escaping (Data) -> Void, completion: ((Error?) -> Void)?) async throws {
-        var req = makeRequest(path: "text-to-speech/\(voice)/stream", method: "POST")
-        req.httpBody = try JSONEncoder().encode(payload)
-        if let outputFormat {
-            req.queryParameters["output_format"] = outputFormat
-        }
-        if let optimizeStreamingLatency {
-            req.queryParameters["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        for try await data in performSteamingDataRequest(from: req) {
-            onResult(data)
-        }
-        completion?(nil)
-    }
-    
+}
+
+// MARK: - Models
+
+extension Client {
+
     public func models() async throws -> [ModelResponse] {
-        let req = makeRequest(path: "models", method: "GET")
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        if let httpResponse = resp as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            throw URLError(.badServerResponse)
+        try await fetch(.get, "models")
+    }
+}
+
+// MARK: - Text to Speech
+
+extension Client {
+
+    public func textToSpeech(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
+        var params: [String: String] = [:]
+        if let outputFormat {
+            params["output_format"] = outputFormat
         }
-        return try decoder.decode([ModelResponse].self, from: data)
+        if let optimizeStreamingLatency {
+            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
+        }
+        return try await fetch(.post, "text-to-speech/\(voice)", body: payload, params: params)
     }
-    
-    // Private
-    
-    private func makeRequest(path: String, method: String) -> URLRequest {
-        var req = URLRequest(url: configuration.host.appending(path: path))
-        req.httpMethod = method
-        req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        req.setValue(configuration.token, forHTTPHeaderField: "xi-api-key")
-        return req
+
+    public func textToSpeechWithTimestamps(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> TextToSpeechResponse {
+        var params: [String: String] = [:]
+        if let outputFormat {
+            params["output_format"] = outputFormat
+        }
+        if let optimizeStreamingLatency {
+            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
+        }
+        return try await fetch(.post, "text-to-speech/\(voice)/with-timestamps", body: payload)
     }
-    
-    private var decoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        return decoder
+
+    public func textToSpeechStream(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> AsyncThrowingStream<Data, Swift.Error> {
+        var params: [String: String] = [:]
+        if let outputFormat {
+            params["output_format"] = outputFormat
+        }
+        if let optimizeStreamingLatency {
+            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
+        }
+        return try fetchAsync(.post, "text-to-speech/\(voice)/stream", body: payload, params: params)
     }
-    
-    func performSteamingDataRequest(from request: URLRequest) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
+
+    public func textToSpeechStreamWithTimestamps(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> AsyncThrowingStream<TextToSpeechResponse, Swift.Error> {
+        var params: [String: String] = [:]
+        if let outputFormat {
+            params["output_format"] = outputFormat
+        }
+        if let optimizeStreamingLatency {
+            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
+        }
+        return try fetchAsync(.post, "text-to-speech/\(voice)/stream/with-timestamps", body: payload, params: params)
+    }
+}
+
+// MARK: - Sound Generation
+
+extension Client {
+
+    public func soundGeneration(_ payload: SoundRequest) async throws -> Data {
+        try await fetch(.post, "sound-generation", body: payload)
+    }
+}
+
+// MARK: - Private
+
+extension Client {
+
+    private func fetch<Response: Decodable>(_ method: Method, _ path: String, body: Encodable? = nil, params: [String: String]? = nil) async throws -> Response {
+        try checkAuthentication()
+        let request = try makeRequest(path: path, method: method, body: body, params: params)
+        let (data, resp) = try await session.data(for: request)
+        try checkResponse(resp, data)
+        if Response.self == Data.self {
+            return data as! Response
+        } else {
+            return try decoder.decode(Response.self, from: data)
+        }
+    }
+
+    private func fetchAsync<Response: Decodable>(_ method: Method, _ path: String, body: Encodable, params: [String: String]? = nil) throws -> AsyncThrowingStream<Response, Swift.Error> {
+        try checkAuthentication()
+        let request = try makeRequest(path: path, method: method, body: body, params: params)
+        return AsyncThrowingStream { continuation in
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
                     continuation.finish(throwing: error)
@@ -87,7 +156,17 @@ public final class ElevenLabsClient {
                     return
                 }
                 if let data = data {
-                    continuation.yield(data)
+                    if Response.self == Data.self {
+                        continuation.yield(data as! Response)
+                    } else {
+                        do {
+                            let decoded = try JSONDecoder().decode(Response.self, from: data)
+                            continuation.yield(decoded)
+                        } catch {
+                            continuation.finish(throwing: error)
+                            return
+                        }
+                    }
                 }
                 continuation.finish()
             }
@@ -103,4 +182,42 @@ public final class ElevenLabsClient {
         }
     }
 
+    private func checkAuthentication() throws {
+        if apiKey.isEmpty {
+            throw Error.requestError("Missing API key")
+        }
+    }
+
+    private func checkResponse(_ resp: URLResponse?, _ data: Data) throws {
+        if let response = resp as? HTTPURLResponse, response.statusCode != 200 {
+            if let err = try? decoder.decode(ErrorResponse.self, from: data) {
+                throw Error.responseError(response: response, detail: err.detail.msg)
+            } else {
+                throw Error.responseError(response: response, detail: "Unknown response error")
+            }
+        }
+    }
+
+    private func makeRequest(path: String, method: Method, body: Encodable? = nil, params: [String: String]? = nil) throws -> URLRequest {
+        var req = URLRequest(url: host.appending(path: path))
+        req.httpMethod = method.rawValue
+        req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+
+        if let params {
+            for (key, value) in params {
+                req.queryParameters[key] = value
+            }
+        }
+
+        if let body {
+            req.httpBody = try JSONEncoder().encode(body)
+        }
+        return req
+    }
+
+    private var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        return decoder
+    }
 }
