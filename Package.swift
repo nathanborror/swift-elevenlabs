@@ -17,16 +17,12 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", branch: "main"),
-        .package(url: "https://github.com/nathanborror/swift-shared-kit", branch: "main"),
     ],
     targets: [
-        .target(name: "ElevenLabs", dependencies: [
-            .product(name: "SharedKit", package: "swift-shared-kit"),
-        ]),
+        .target(name: "ElevenLabs", dependencies: []),
         .executableTarget(name: "ElevenLabsCmd", dependencies: [
             "ElevenLabs",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            .product(name: "SharedKit", package: "swift-shared-kit"),
         ]),
     ]
 )

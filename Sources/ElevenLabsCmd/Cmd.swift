@@ -1,7 +1,6 @@
 import Foundation
 import ArgumentParser
 import ElevenLabs
-import SharedKit
 
 @main
 struct Cmd: AsyncParsableCommand {
