@@ -50,9 +50,11 @@ public final class Client {
         let detail: Detail
 
         struct Detail: Codable, Sendable {
-            let loc: [String]
-            let msg: String
-            let type: String
+            let loc: [String]?
+            let msg: String?
+            let type: String?
+            let status: String?
+            let message: String?
         }
     }
 }
@@ -66,61 +68,51 @@ extension Client {
     }
 }
 
-// MARK: - Text to Speech
+// MARK: - Voices
 
 extension Client {
 
-    public func textToSpeech(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> Data {
-        var params: [String: String] = [:]
-        if let outputFormat {
-            params["output_format"] = outputFormat
-        }
-        if let optimizeStreamingLatency {
-            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        return try await fetch(.post, "text-to-speech/\(voice)", body: payload, params: params)
-    }
-
-    public func textToSpeechWithTimestamps(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> TextToSpeechResponse {
-        var params: [String: String] = [:]
-        if let outputFormat {
-            params["output_format"] = outputFormat
-        }
-        if let optimizeStreamingLatency {
-            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        return try await fetch(.post, "text-to-speech/\(voice)/with-timestamps", body: payload)
-    }
-
-    public func textToSpeechStream(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> AsyncThrowingStream<Data, Swift.Error> {
-        var params: [String: String] = [:]
-        if let outputFormat {
-            params["output_format"] = outputFormat
-        }
-        if let optimizeStreamingLatency {
-            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        return try fetchAsync(.post, "text-to-speech/\(voice)/stream", body: payload, params: params)
-    }
-
-    public func textToSpeechStreamWithTimestamps(_ payload: TextToSpeechRequest, voice: String, optimizeStreamingLatency: Int? = nil, outputFormat: String? = nil) async throws -> AsyncThrowingStream<TextToSpeechResponse, Swift.Error> {
-        var params: [String: String] = [:]
-        if let outputFormat {
-            params["output_format"] = outputFormat
-        }
-        if let optimizeStreamingLatency {
-            params["optimize_streaming_latency"] = String(optimizeStreamingLatency)
-        }
-        return try fetchAsync(.post, "text-to-speech/\(voice)/stream/with-timestamps", body: payload, params: params)
+    public func voices() async throws -> VoicesResponse {
+        try await fetch(.get, "voices")
     }
 }
+
+// MARK: - Speech
+
+extension Client {
+
+    public func textToSpeech(_ request: SpeechRequest) async throws -> Data {
+        try await fetch(.post, "text-to-speech/\(request.voice_id)", request: request, params: request.params)
+    }
+
+    public func textToSpeechWithTimestamps(_ request: SpeechRequest) async throws -> SpeechResponse {
+        try await fetch(.post, "text-to-speech/\(request.voice_id)/with-timestamps", request: request, params: request.params)
+    }
+
+    public func textToSpeechStream(_ request: SpeechRequest) async throws -> AsyncThrowingStream<Data, Swift.Error> {
+        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream", request: request, params: request.params)
+    }
+
+    public func textToSpeechStreamWithTimestamps(_ request: SpeechRequest) async throws -> AsyncThrowingStream<SpeechResponse, Swift.Error> {
+        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream/with-timestamps", request: request, params: request.params)
+    }
+}
+
+// MARK: - Transcription
+
+//extension Client {
+//
+//    public func speechToText(_ request: TranscriptionRequest, file: URL) async throws -> TranscriptionResponse {
+//        try await fetch(.post, "speech-to-text", request: request, file: file)
+//    }
+//}
 
 // MARK: - Sound Generation
 
 extension Client {
 
-    public func soundGeneration(_ payload: SoundRequest) async throws -> Data {
-        try await fetch(.post, "sound-generation", body: payload)
+    public func soundGeneration(_ request: SoundRequest) async throws -> Data {
+        try await fetch(.post, "sound-generation", request: request)
     }
 }
 
@@ -128,9 +120,9 @@ extension Client {
 
 extension Client {
 
-    private func fetch<Response: Decodable>(_ method: Method, _ path: String, body: Encodable? = nil, params: [String: String]? = nil) async throws -> Response {
+    private func fetch<Response: Decodable>(_ method: Method, _ path: String, request: Encodable? = nil, params: [String: String]? = nil) async throws -> Response {
         try checkAuthentication()
-        let request = try makeRequest(path: path, method: method, body: body, params: params)
+        let request = try makeRequest(path: path, method: method, request: request, params: params)
         let (data, resp) = try await session.data(for: request)
         try checkResponse(resp, data)
         if Response.self == Data.self {
@@ -140,17 +132,16 @@ extension Client {
         }
     }
 
-    private func fetchAsync<Response: Decodable>(_ method: Method, _ path: String, body: Encodable, params: [String: String]? = nil) throws -> AsyncThrowingStream<Response, Swift.Error> {
+    private func fetchAsync<Response: Decodable>(_ method: Method, _ path: String, request: Encodable, params: [String: String]? = nil) throws -> AsyncThrowingStream<Response, Swift.Error> {
         try checkAuthentication()
-        let request = try makeRequest(path: path, method: method, body: body, params: params)
+        let request = try makeRequest(path: path, method: method, request: request, params: params)
         return AsyncThrowingStream { continuation in
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
                     continuation.finish(throwing: error)
                     return
                 }
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200...299).contains(httpResponse.statusCode) else {
+                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                     continuation.finish(throwing: URLError(.badServerResponse))
                     return
                 }
@@ -190,27 +181,25 @@ extension Client {
     private func checkResponse(_ resp: URLResponse?, _ data: Data) throws {
         if let response = resp as? HTTPURLResponse, response.statusCode != 200 {
             if let err = try? decoder.decode(ErrorResponse.self, from: data) {
-                throw Error.responseError(response: response, detail: err.detail.msg)
+                throw Error.responseError(response: response, detail: err.detail.msg ?? err.detail.message ?? "Unknown")
             } else {
                 throw Error.responseError(response: response, detail: "Unknown response error")
             }
         }
     }
 
-    private func makeRequest(path: String, method: Method, body: Encodable? = nil, params: [String: String]? = nil) throws -> URLRequest {
+    private func makeRequest(path: String, method: Method, request: Encodable? = nil, params: [String: String]? = nil) throws -> URLRequest {
         var req = URLRequest(url: host.appending(path: path))
         req.httpMethod = method.rawValue
         req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-
         if let params {
             for (key, value) in params {
                 req.queryParameters[key] = value
             }
         }
-
-        if let body {
-            req.httpBody = try JSONEncoder().encode(body)
+        if let request {
+            req.httpBody = try JSONEncoder().encode(request)
         }
         return req
     }
