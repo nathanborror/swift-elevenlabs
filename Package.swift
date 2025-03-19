@@ -13,14 +13,13 @@ let package = Package(
     ],
     products: [
         .library(name: "ElevenLabs", targets: ["ElevenLabs"]),
-        .executable(name: "ElevenLabsCLI", targets: ["ElevenLabsCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", branch: "main"),
     ],
     targets: [
         .target(name: "ElevenLabs", dependencies: []),
-        .executableTarget(name: "ElevenLabsCLI", dependencies: [
+        .executableTarget(name: "CLI", dependencies: [
             "ElevenLabs",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ]),

@@ -82,37 +82,37 @@ extension Client {
 extension Client {
 
     public func textToSpeech(_ request: SpeechRequest) async throws -> Data {
-        try await fetch(.post, "text-to-speech/\(request.voice_id)", request: request, params: request.params)
+        try await fetch(.post, "text-to-speech/\(request.voice_id)", body: request, params: request.params)
     }
 
     public func textToSpeechWithTimestamps(_ request: SpeechRequest) async throws -> SpeechResponse {
-        try await fetch(.post, "text-to-speech/\(request.voice_id)/with-timestamps", request: request, params: request.params)
+        try await fetch(.post, "text-to-speech/\(request.voice_id)/with-timestamps", body: request, params: request.params)
     }
 
     public func textToSpeechStream(_ request: SpeechRequest) async throws -> AsyncThrowingStream<Data, Swift.Error> {
-        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream", request: request, params: request.params)
+        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream", body: request, params: request.params)
     }
 
     public func textToSpeechStreamWithTimestamps(_ request: SpeechRequest) async throws -> AsyncThrowingStream<SpeechResponse, Swift.Error> {
-        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream/with-timestamps", request: request, params: request.params)
+        try fetchAsync(.post, "text-to-speech/\(request.voice_id)/stream/with-timestamps", body: request, params: request.params)
     }
 }
 
 // MARK: - Transcription
 
-//extension Client {
-//
-//    public func speechToText(_ request: TranscriptionRequest, file: URL) async throws -> TranscriptionResponse {
-//        try await fetch(.post, "speech-to-text", request: request, file: file)
-//    }
-//}
+extension Client {
+
+    public func speechToText(_ request: TranscriptionRequest) async throws -> TranscriptionResponse {
+        try await fetch(.post, "speech-to-text", body: request, multipart: true)
+    }
+}
 
 // MARK: - Sound Generation
 
 extension Client {
 
     public func soundGeneration(_ request: SoundRequest) async throws -> Data {
-        try await fetch(.post, "sound-generation", request: request)
+        try await fetch(.post, "sound-generation", body: request)
     }
 }
 
@@ -120,9 +120,9 @@ extension Client {
 
 extension Client {
 
-    private func fetch<Response: Decodable>(_ method: Method, _ path: String, request: Encodable? = nil, params: [String: String]? = nil) async throws -> Response {
+    private func fetch<Response: Decodable>(_ method: Method, _ path: String, body: Encodable? = nil, params: [String: String]? = nil, multipart: Bool = false) async throws -> Response {
         try checkAuthentication()
-        let request = try makeRequest(path: path, method: method, request: request, params: params)
+        let request = try makeRequest(path: path, method: method, body: body, params: params, multipart: multipart)
         let (data, resp) = try await session.data(for: request)
         try checkResponse(resp, data)
         if Response.self == Data.self {
@@ -132,9 +132,9 @@ extension Client {
         }
     }
 
-    private func fetchAsync<Response: Decodable>(_ method: Method, _ path: String, request: Encodable, params: [String: String]? = nil) throws -> AsyncThrowingStream<Response, Swift.Error> {
+    private func fetchAsync<Response: Decodable>(_ method: Method, _ path: String, body: Encodable, params: [String: String]? = nil, multipart: Bool = false) throws -> AsyncThrowingStream<Response, Swift.Error> {
         try checkAuthentication()
-        let request = try makeRequest(path: path, method: method, request: request, params: params)
+        let request = try makeRequest(path: path, method: method, body: body, params: params, multipart: multipart)
         return AsyncThrowingStream { continuation in
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
@@ -188,20 +188,54 @@ extension Client {
         }
     }
 
-    private func makeRequest(path: String, method: Method, request: Encodable? = nil, params: [String: String]? = nil) throws -> URLRequest {
+    private func makeRequest(path: String, method: Method, body: Encodable? = nil, params: [String: String]? = nil, multipart: Bool) throws -> URLRequest {
         var req = URLRequest(url: host.appending(path: path))
         req.httpMethod = method.rawValue
-        req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         if let params {
             for (key, value) in params {
                 req.queryParameters[key] = value
             }
         }
-        if let request {
-            req.httpBody = try JSONEncoder().encode(request)
+        if let body {
+            if multipart {
+                let boundary = UUID().uuidString
+                req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try encodeMultipartFormData(body, boundary: boundary)
+            } else {
+                req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try JSONEncoder().encode(body)
+            }
         }
         return req
+    }
+
+    private func encodeMultipartFormData<T: Encodable>(_ body: T, boundary: String) throws -> Data {
+        var data = Data()
+        let mirror = Mirror(reflecting: body)
+        for child in mirror.children {
+            guard let name = child.label else { continue }
+
+            if let fileURL = child.value as? URL {
+                let filename = fileURL.lastPathComponent
+                let fileData = try Data(contentsOf: fileURL)
+
+                data.append("--\(boundary)\r\n".data(using: .utf8)!)
+                data.append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+                data.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+                data.append(fileData)
+                data.append("\r\n".data(using: .utf8)!)
+            } else {
+                let value = String(describing: child.value)
+                if value != "nil" {
+                    data.append("--\(boundary)\r\n".data(using: .utf8)!)
+                    data.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+                    data.append("\(value)\r\n".data(using: .utf8)!)
+                }
+            }
+        }
+        data.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        return data
     }
 
     private var decoder: JSONDecoder {
