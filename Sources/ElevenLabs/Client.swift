@@ -10,6 +10,9 @@ public final class Client {
 
     internal(set) public var session: URLSession
 
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
     public init(session: URLSession = URLSession(configuration: .default), host: URL = defaultHost, apiKey: String, userAgent: String? = nil) {
         var host = host
         if !host.path.hasSuffix("/") {
@@ -19,6 +22,8 @@ public final class Client {
         self.apiKey = apiKey
         self.userAgent = userAgent
         self.session = session
+        self.encoder = JSONEncoder()
+        self.decoder = JSONDecoder()
     }
 
     public enum Error: Swift.Error, CustomStringConvertible {
@@ -150,7 +155,7 @@ extension Client {
                         continuation.yield(data as! Response)
                     } else {
                         do {
-                            let decoded = try JSONDecoder().decode(Response.self, from: data)
+                            let decoded = try self.decoder.decode(Response.self, from: data)
                             continuation.yield(decoded)
                         } catch {
                             continuation.finish(throwing: error)
@@ -204,7 +209,7 @@ extension Client {
                 req.httpBody = try encodeMultipartFormData(body, boundary: boundary)
             } else {
                 req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-                req.httpBody = try JSONEncoder().encode(body)
+                req.httpBody = try encoder.encode(body)
             }
         }
         return req
@@ -236,10 +241,5 @@ extension Client {
         }
         data.append("--\(boundary)--\r\n".data(using: .utf8)!)
         return data
-    }
-
-    private var decoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        return decoder
     }
 }
