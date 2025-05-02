@@ -13,15 +13,11 @@ public final class Client {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    public init(session: URLSession = URLSession(configuration: .default), host: URL = defaultHost, apiKey: String, userAgent: String? = nil) {
-        var host = host
-        if !host.path.hasSuffix("/") {
-            host = host.appendingPathComponent("")
-        }
-        self.host = host
+    public init(session: URLSession? = nil, host: URL? = nil, apiKey: String, userAgent: String? = nil) {
+        self.session = session ?? URLSession(configuration: .default)
+        self.host = host ?? Self.defaultHost
         self.apiKey = apiKey
         self.userAgent = userAgent
-        self.session = session
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
     }
