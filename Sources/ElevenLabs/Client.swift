@@ -136,7 +136,7 @@ extension Client {
         try checkAuthentication()
         let request = try makeRequest(path: path, method: method, body: body, params: params, multipart: multipart)
         return AsyncThrowingStream { continuation in
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            let task = session.dataTask(with: request) { data, response, error in
                 if let error = error {
                     continuation.finish(throwing: error)
                     return
